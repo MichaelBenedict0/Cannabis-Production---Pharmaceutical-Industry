@@ -5,9 +5,12 @@
 (define-constant ERR_INVALID_LICENSE (err u422))
 (define-constant ERR_PRODUCT_RECALLED (err u423))
 (define-constant ERR_PRESCRIPTION_INVALID (err u424))
+(define-constant ERR_BATCH_FULL (err u425))
+(define-constant ERR_BATCH_EMPTY (err u426))
 
 (define-data-var next-plant-id uint u1)
 (define-data-var next-prescription-id uint u1)
+(define-data-var next-batch-id uint u1)
 (define-data-var compliance-token-supply uint u1000000)
 
 (define-map licenses 
@@ -71,6 +74,26 @@
   }
 )
 
+(define-map batches
+  { batch-id: uint }
+  {
+    creator: principal,
+    strain: (string-ascii 50),
+    plant-count: uint,
+    created-block: uint,
+    current-stage: (string-ascii 20),
+    lab-tested: bool,
+    average-quality: uint,
+    is-recalled: bool,
+    max-capacity: uint
+  }
+)
+
+(define-map batch-plants
+  { batch-id: uint, plant-id: uint }
+  { added-block: uint }
+)
+
 (define-read-only (get-license (entity principal) (license-type (string-ascii 20)))
   (map-get? licenses { entity: entity, license-type: license-type })
 )
@@ -93,6 +116,14 @@
 
 (define-read-only (get-stakeholder-score (entity principal))
   (map-get? stakeholder-scores { entity: entity })
+)
+
+(define-read-only (get-batch (batch-id uint))
+  (map-get? batches { batch-id: batch-id })
+)
+
+(define-read-only (get-batch-plant (batch-id uint) (plant-id uint))
+  (map-get? batch-plants { batch-id: batch-id, plant-id: plant-id })
 )
 
 (define-private (is-license-valid (entity principal) (license-type (string-ascii 20)))
@@ -328,6 +359,111 @@
     )
     (update-compliance-score tx-sender u5)
     (update-compliance-score new-owner u5)
+    (ok true)
+  )
+)
+
+(define-public (create-batch (strain (string-ascii 50)) (max-capacity uint))
+  (let
+    (
+      (batch-id (var-get next-batch-id))
+    )
+    (asserts! (is-license-valid tx-sender "grower") ERR_INVALID_LICENSE)
+    (asserts! (> max-capacity u0) ERR_BATCH_EMPTY)
+    (map-set batches
+      { batch-id: batch-id }
+      {
+        creator: tx-sender,
+        strain: strain,
+        plant-count: u0,
+        created-block: stacks-block-height,
+        current-stage: "batch-created",
+        lab-tested: false,
+        average-quality: u0,
+        is-recalled: false,
+        max-capacity: max-capacity
+      }
+    )
+    (var-set next-batch-id (+ batch-id u1))
+    (update-compliance-score tx-sender u15)
+    (award-compliance-tokens tx-sender u75)
+    (ok batch-id)
+  )
+)
+
+(define-public (add-plant-to-batch (batch-id uint) (plant-id uint))
+  (let
+    (
+      (batch (unwrap! (map-get? batches { batch-id: batch-id }) ERR_NOT_FOUND))
+      (plant (unwrap! (map-get? plants { plant-id: plant-id }) ERR_NOT_FOUND))
+    )
+    (asserts! (is-eq tx-sender (get creator batch)) ERR_UNAUTHORIZED)
+    (asserts! (is-eq tx-sender (get owner plant)) ERR_UNAUTHORIZED)
+    (asserts! (not (get is-recalled batch)) ERR_PRODUCT_RECALLED)
+    (asserts! (not (get is-recalled plant)) ERR_PRODUCT_RECALLED)
+    (asserts! (is-eq (get strain batch) (get strain plant)) ERR_INVALID_LICENSE)
+    (asserts! (< (get plant-count batch) (get max-capacity batch)) ERR_BATCH_FULL)
+    (asserts! (is-none (map-get? batch-plants { batch-id: batch-id, plant-id: plant-id })) ERR_ALREADY_EXISTS)
+    (map-set batch-plants
+      { batch-id: batch-id, plant-id: plant-id }
+      { added-block: stacks-block-height }
+    )
+    (map-set batches
+      { batch-id: batch-id }
+      (merge batch { plant-count: (+ (get plant-count batch) u1) })
+    )
+    (update-compliance-score tx-sender u8)
+    (ok true)
+  )
+)
+
+(define-public (update-batch-stage (batch-id uint) (new-stage (string-ascii 20)))
+  (let
+    (
+      (batch (unwrap! (map-get? batches { batch-id: batch-id }) ERR_NOT_FOUND))
+    )
+    (asserts! (is-eq tx-sender (get creator batch)) ERR_UNAUTHORIZED)
+    (asserts! (not (get is-recalled batch)) ERR_PRODUCT_RECALLED)
+    (map-set batches
+      { batch-id: batch-id }
+      (merge batch { current-stage: new-stage })
+    )
+    (update-compliance-score tx-sender u10)
+    (ok true)
+  )
+)
+
+(define-public (submit-batch-lab-results (batch-id uint) (average-quality uint))
+  (let
+    (
+      (batch (unwrap! (map-get? batches { batch-id: batch-id }) ERR_NOT_FOUND))
+    )
+    (asserts! (is-license-valid tx-sender "lab") ERR_INVALID_LICENSE)
+    (asserts! (not (get is-recalled batch)) ERR_PRODUCT_RECALLED)
+    (asserts! (> (get plant-count batch) u0) ERR_BATCH_EMPTY)
+    (map-set batches
+      { batch-id: batch-id }
+      (merge batch { 
+        lab-tested: true,
+        average-quality: average-quality
+      })
+    )
+    (update-compliance-score tx-sender u30)
+    (award-compliance-tokens tx-sender u150)
+    (ok true)
+  )
+)
+
+(define-public (recall-batch (batch-id uint))
+  (let
+    (
+      (batch (unwrap! (map-get? batches { batch-id: batch-id }) ERR_NOT_FOUND))
+    )
+    (asserts! (is-eq tx-sender CONTRACT_OWNER) ERR_UNAUTHORIZED)
+    (map-set batches
+      { batch-id: batch-id }
+      (merge batch { is-recalled: true })
+    )
     (ok true)
   )
 )
