@@ -94,6 +94,15 @@
   { added-block: uint }
 )
 
+(define-map plant-listings
+  { plant-id: uint }
+  {
+    seller: principal,
+    price: uint,
+    listed-block: uint
+  }
+)
+
 (define-read-only (get-license (entity principal) (license-type (string-ascii 20)))
   (map-get? licenses { entity: entity, license-type: license-type })
 )
@@ -124,6 +133,10 @@
 
 (define-read-only (get-batch-plant (batch-id uint) (plant-id uint))
   (map-get? batch-plants { batch-id: batch-id, plant-id: plant-id })
+)
+
+(define-read-only (get-plant-listing (plant-id uint))
+  (map-get? plant-listings { plant-id: plant-id })
 )
 
 (define-private (is-license-valid (entity principal) (license-type (string-ascii 20)))
@@ -464,6 +477,50 @@
       { batch-id: batch-id }
       (merge batch { is-recalled: true })
     )
+    (ok true)
+  )
+)
+
+(define-public (list-plant-for-sale (plant-id uint) (price uint))
+  (let
+    (
+      (plant (unwrap! (map-get? plants { plant-id: plant-id }) ERR_NOT_FOUND))
+    )
+    (asserts! (is-eq tx-sender (get owner plant)) ERR_UNAUTHORIZED)
+    (asserts! (not (get is-recalled plant)) ERR_PRODUCT_RECALLED)
+    (asserts! (> price u0) ERR_INVALID_LICENSE)
+    (asserts! (is-none (map-get? plant-listings { plant-id: plant-id })) ERR_ALREADY_EXISTS)
+    (map-set plant-listings
+      { plant-id: plant-id }
+      {
+        seller: tx-sender,
+        price: price,
+        listed-block: stacks-block-height
+      }
+    )
+    (ok true)
+  )
+)
+
+(define-public (buy-plant (plant-id uint))
+  (let
+    (
+      (listing (unwrap! (map-get? plant-listings { plant-id: plant-id }) ERR_NOT_FOUND))
+      (plant (unwrap! (map-get? plants { plant-id: plant-id }) ERR_NOT_FOUND))
+      (price (get price listing))
+      (seller (get seller listing))
+    )
+    (asserts! (is-license-valid tx-sender "grower") ERR_INVALID_LICENSE)
+    (asserts! (not (is-eq tx-sender seller)) ERR_UNAUTHORIZED)
+    (asserts! (not (get is-recalled plant)) ERR_PRODUCT_RECALLED)
+    (try! (stx-transfer? price tx-sender seller))
+    (map-set plants
+      { plant-id: plant-id }
+      (merge plant { owner: tx-sender })
+    )
+    (map-delete plant-listings { plant-id: plant-id })
+    (update-compliance-score tx-sender u10)
+    (update-compliance-score seller u10)
     (ok true)
   )
 )

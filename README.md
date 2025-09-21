@@ -175,3 +175,34 @@ clarinet test
 ## 📄 License
 
 MIT License - Built for transparency and safety in cannabis pharmaceuticals.
+
+## 🛒 Plant Marketplace
+
+### 🌱 Direct Plant Trading
+Empower stakeholders with a decentralized marketplace for seamless plant exchanges:
+- **List Plants**: Owners can showcase their plants with custom pricing
+- **Secure Transactions**: Built-in STX transfers ensure trustless exchanges
+- **License Verification**: Only licensed growers can participate in buying
+- **Compliance Rewards**: Successful trades boost stakeholder scores
+
+### 💰 Marketplace Functions
+```clarity
+(contract-call? .cannabis-tracker list-plant-for-sale u1 u1000)
+(contract-call? .cannabis-tracker buy-plant u1)
+```
+
+### 🔍 Marketplace Queries
+```clarity
+(contract-call? .cannabis-tracker get-plant-listing u1)
+```
+
+### Data Structures
+- **plant-listings**: Active sale listings with pricing and seller info
+
+### Benefits
+- 🚀 **Liquidity Boost**: Facilitates efficient resource allocation
+- 🔒 **Regulatory Compliance**: Maintains license checks and ownership tracking
+- 💼 **Economic Opportunities**: Opens new revenue streams for growers
+- 🌐 **Decentralized Trading**: Peer-to-peer without intermediaries
+
+#CannabisTech #BlockchainTrading #PharmaInnovation
