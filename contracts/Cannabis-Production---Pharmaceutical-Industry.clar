@@ -524,3 +524,24 @@
     (ok true)
   )
 )
+
+(define-public (transfer-compliance-tokens (recipient principal) (amount uint))
+  (let
+    (
+      (sender-balance (get-compliance-balance tx-sender))
+      (recipient-balance (get-compliance-balance recipient))
+    )
+    (asserts! (> amount u0) ERR_INVALID_LICENSE)
+    (asserts! (>= sender-balance amount) ERR_UNAUTHORIZED)
+    (asserts! (not (is-eq tx-sender recipient)) ERR_UNAUTHORIZED)
+    (map-set compliance-tokens
+      { holder: tx-sender }
+      { balance: (- sender-balance amount) }
+    )
+    (map-set compliance-tokens
+      { holder: recipient }
+      { balance: (+ recipient-balance amount) }
+    )
+    (ok true)
+  )
+)
