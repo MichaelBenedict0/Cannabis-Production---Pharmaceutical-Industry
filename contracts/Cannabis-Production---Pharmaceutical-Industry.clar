@@ -103,6 +103,16 @@
   }
 )
 
+(define-map plant-harvests
+  { plant-id: uint }
+  {
+    harvest-block: uint,
+    yield-amount: uint,
+    quality-rating: uint,
+    harvester: principal
+  }
+)
+
 (define-read-only (get-license (entity principal) (license-type (string-ascii 20)))
   (map-get? licenses { entity: entity, license-type: license-type })
 )
@@ -137,6 +147,10 @@
 
 (define-read-only (get-plant-listing (plant-id uint))
   (map-get? plant-listings { plant-id: plant-id })
+)
+
+(define-read-only (get-plant-harvest (plant-id uint))
+  (map-get? plant-harvests { plant-id: plant-id })
 )
 
 (define-private (is-license-valid (entity principal) (license-type (string-ascii 20)))
@@ -542,6 +556,36 @@
       { holder: recipient }
       { balance: (+ recipient-balance amount) }
     )
+    (ok true)
+  )
+)
+
+(define-public (harvest-plant (plant-id uint) (yield-amount uint) (quality-rating uint))
+  (let
+    (
+      (plant (unwrap! (map-get? plants { plant-id: plant-id }) ERR_NOT_FOUND))
+    )
+    (asserts! (is-eq tx-sender (get owner plant)) ERR_UNAUTHORIZED)
+    (asserts! (not (get is-recalled plant)) ERR_PRODUCT_RECALLED)
+    (asserts! (get lab-tested plant) ERR_NOT_FOUND)
+    (asserts! (> yield-amount u0) ERR_INVALID_LICENSE)
+    (asserts! (<= quality-rating u100) ERR_INVALID_LICENSE)
+    (asserts! (is-none (map-get? plant-harvests { plant-id: plant-id })) ERR_ALREADY_EXISTS)
+    (map-set plant-harvests
+      { plant-id: plant-id }
+      {
+        harvest-block: stacks-block-height,
+        yield-amount: yield-amount,
+        quality-rating: quality-rating,
+        harvester: tx-sender
+      }
+    )
+    (map-set plants
+      { plant-id: plant-id }
+      (merge plant { current-stage: "harvested" })
+    )
+    (update-compliance-score tx-sender u20)
+    (award-compliance-tokens tx-sender u80)
     (ok true)
   )
 )
