@@ -11,6 +11,7 @@
 (define-data-var next-plant-id uint u1)
 (define-data-var next-prescription-id uint u1)
 (define-data-var next-batch-id uint u1)
+(define-data-var next-proposal-id uint u1)
 (define-data-var compliance-token-supply uint u1000000)
 
 (define-map licenses 
@@ -113,6 +114,25 @@
   }
 )
 
+(define-map proposals
+  { proposal-id: uint }
+  {
+    proposer: principal,
+    description: (string-ascii 200),
+    proposal-type: (string-ascii 20),
+    target-id: uint,
+    vote-count-yes: uint,
+    vote-count-no: uint,
+    end-block: uint,
+    executed: bool
+  }
+)
+
+(define-map proposal-votes
+  { proposal-id: uint, voter: principal }
+  { vote: bool }
+)
+
 (define-read-only (get-license (entity principal) (license-type (string-ascii 20)))
   (map-get? licenses { entity: entity, license-type: license-type })
 )
@@ -153,6 +173,14 @@
   (map-get? plant-harvests { plant-id: plant-id })
 )
 
+(define-read-only (get-proposal (proposal-id uint))
+  (map-get? proposals { proposal-id: proposal-id })
+)
+
+(define-read-only (get-proposal-vote (proposal-id uint) (voter principal))
+  (map-get? proposal-votes { proposal-id: proposal-id, voter: voter })
+)
+
 (define-private (is-license-valid (entity principal) (license-type (string-ascii 20)))
   (match (map-get? licenses { entity: entity, license-type: license-type })
     license (and (get is-valid license) (> (get expiry-block license) stacks-block-height))
@@ -176,7 +204,7 @@
   (let
     (
       (current-score (default-to { compliance-score: u0, total-transactions: u0, violations: u0 }
-                     (map-get? stakeholder-scores { entity: entity })))
+                    (map-get? stakeholder-scores { entity: entity })))
     )
     (map-set stakeholder-scores
       { entity: entity }
@@ -186,6 +214,16 @@
         violations: (get violations current-score)
       }
     )
+  )
+)
+
+(define-private (can-execute-proposal (proposal-id uint))
+  (let
+    (
+      (proposal (unwrap! (map-get? proposals { proposal-id: proposal-id }) false))
+      (total-votes (+ (get vote-count-yes proposal) (get vote-count-no proposal)))
+    )
+    (and (> total-votes u0) (> (get vote-count-yes proposal) (/ total-votes u2)) (< stacks-block-height (get end-block proposal)) (not (get executed proposal)))
   )
 )
 
@@ -221,7 +259,7 @@
     (let
       (
         (current-score (default-to { compliance-score: u0, total-transactions: u0, violations: u0 }
-                       (map-get? stakeholder-scores { entity: entity })))
+                        (map-get? stakeholder-scores { entity: entity })))
       )
       (map-set stakeholder-scores
         { entity: entity }
@@ -587,5 +625,83 @@
     (update-compliance-score tx-sender u20)
     (award-compliance-tokens tx-sender u80)
     (ok true)
+  )
+)
+
+(define-public (create-proposal (description (string-ascii 200)) (proposal-type (string-ascii 20)) (target-id uint) (duration-blocks uint))
+  (let
+    (
+      (proposal-id (var-get next-proposal-id))
+    )
+    (asserts! (is-license-valid tx-sender "grower") ERR_INVALID_LICENSE)
+    (asserts! (> duration-blocks u0) ERR_INVALID_LICENSE)
+    (map-set proposals
+      { proposal-id: proposal-id }
+      {
+        proposer: tx-sender,
+        description: description,
+        proposal-type: proposal-type,
+        target-id: target-id,
+        vote-count-yes: u0,
+        vote-count-no: u0,
+        end-block: (+ stacks-block-height duration-blocks),
+        executed: false
+      }
+    )
+    (var-set next-proposal-id (+ proposal-id u1))
+    (update-compliance-score tx-sender u10)
+    (award-compliance-tokens tx-sender u50)
+    (ok proposal-id)
+  )
+)
+
+(define-public (vote-on-proposal (proposal-id uint) (vote bool))
+  (let
+    (
+      (proposal (unwrap! (map-get? proposals { proposal-id: proposal-id }) ERR_NOT_FOUND))
+    )
+    (asserts! (is-license-valid tx-sender "grower") ERR_INVALID_LICENSE)
+    (asserts! (< stacks-block-height (get end-block proposal)) ERR_INVALID_LICENSE)
+    (asserts! (not (get executed proposal)) ERR_INVALID_LICENSE)
+    (asserts! (is-none (map-get? proposal-votes { proposal-id: proposal-id, voter: tx-sender })) ERR_ALREADY_EXISTS)
+    (map-set proposal-votes
+      { proposal-id: proposal-id, voter: tx-sender }
+      { vote: vote }
+    )
+    (map-set proposals
+      { proposal-id: proposal-id }
+      (if vote
+        (merge proposal { vote-count-yes: (+ (get vote-count-yes proposal) u1) })
+        (merge proposal { vote-count-no: (+ (get vote-count-no proposal) u1) })
+      )
+    )
+    (update-compliance-score tx-sender u5)
+    (ok true)
+  )
+)
+
+(define-public (execute-proposal (proposal-id uint))
+  (let
+    (
+      (proposal (unwrap! (map-get? proposals { proposal-id: proposal-id }) ERR_NOT_FOUND))
+    )
+    (asserts! (can-execute-proposal proposal-id) ERR_UNAUTHORIZED)
+    (if (is-eq (get proposal-type proposal) "recall-plant")
+      (let
+        (
+          (plant (unwrap! (map-get? plants { plant-id: (get target-id proposal) }) ERR_NOT_FOUND))
+        )
+        (map-set plants
+          { plant-id: (get target-id proposal) }
+          (merge plant { is-recalled: true })
+        )
+        (map-set proposals
+          { proposal-id: proposal-id }
+          (merge proposal { executed: true })
+        )
+        (ok true)
+      )
+      ERR_INVALID_LICENSE
+    )
   )
 )

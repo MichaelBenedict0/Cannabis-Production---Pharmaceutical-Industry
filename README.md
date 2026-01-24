@@ -8,7 +8,8 @@ This smart contract system addresses critical issues in the cannabis pharmaceuti
 - 🧪 Tamper-proof lab result recording
 - 💊 On-chain prescription validation
 - 🚨 Real-time product recall capabilities
-- 🏆 Compliance incentive system with token rewards
+- 🌾 Comprehensive harvest yield recording and quality assessment
+- � Compliance incentive system with token rewards
 
 ## 🚀 Core Features
 
@@ -16,6 +17,7 @@ This smart contract system addresses critical issues in the cannabis pharmaceuti
 Each cannabis plant receives a unique digital identity that tracks its complete journey:
 - Seed planting and strain information
 - Growth stage updates (seedling → vegetative → flowering → harvest)
+- Harvest yield recording with quality ratings and timestamps
 - Lab testing results and approval status
 - Ownership transfers throughout the supply chain
 
@@ -79,6 +81,11 @@ Token-based incentive system encouraging transparency:
 (contract-call? .cannabis-tracker fill-prescription u1)
 ```
 
+### Plant Harvesting
+```clarity
+(contract-call? .cannabis-tracker harvest-plant u1 u500 u85)
+```
+
 ### Product Recall
 ```clarity
 (contract-call? .cannabis-tracker recall-product u1)
@@ -116,6 +123,11 @@ Token-based incentive system encouraging transparency:
 (contract-call? .cannabis-tracker get-stakeholder-score 'SP1ENTITY)
 ```
 
+### Check Plant Harvest
+```clarity
+(contract-call? .cannabis-tracker get-plant-harvest u1)
+```
+
 ## 🏗️ Contract Architecture
 
 ### Data Structures
@@ -123,6 +135,7 @@ Token-based incentive system encouraging transparency:
 - **plants**: Complete plant lifecycle information
 - **lab-results**: Testing data and approvals
 - **prescriptions**: Medical prescription records
+- **plant-harvests**: Harvest yield and quality records
 - **compliance-tokens**: Reward token balances
 - **stakeholder-scores**: Performance and compliance metrics
 
